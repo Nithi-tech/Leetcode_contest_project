@@ -1,0 +1,12 @@
+{
+  "_comment": "Configuration for LeetCode fraud detector",
+  "sheet_id": "1pFtWLyvIHuLhxY6QAijJNalRnvE5pxgvmbVDzsAtA4w",
+  "sheet_name": "Real data Leetcode",
+  "service_account_file": "./service.json",
+  "contest_slug": "biweekly-contest-171",
+  "contest_display_name": "Biweekly Contest 171",
+  "contest_start_ts": 1765031400,
+  "contest_end_ts": 1765036800,
+  "contest_problems": [],
+  "_note": "Contest 171: Dec 6, 2025 at 8:00 PM (90 min duration). Ends at 9:30 PM. Auto-fetches problems and official metadata via API."
+}
