@@ -108,7 +108,7 @@ class ContestScheduler:
             return False
         
         # Check if it's between 9:32 AM and 9:33 AM IST
-        if now_ist.hour == 9 and 32 <= now_ist.minute <= 33:
+        if now_ist.hour == 9 and 34 <= now_ist.minute <= 35:
             return True
         
         return False
@@ -127,7 +127,7 @@ class ContestScheduler:
             return False
         
         # Check if it's between 9:32 PM and 9:33 PM IST
-        if now_ist.hour == 21 and 32 <= now_ist.minute <= 33:
+        if now_ist.hour == 21 and 34 <= now_ist.minute <= 35:
             return True
         
         return False
