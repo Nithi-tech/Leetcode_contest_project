@@ -143,30 +143,19 @@ def parse_contest_id(title_slug: str) -> Optional[int]:
 
 def get_recent_contests(include_upcoming: bool = False) -> Dict:
     """
-    Get the most recent Weekly and Biweekly contests.
-    
-    Strategy: Try recent contest numbers in descending order until we find valid ones.
-    
-    Args:
-        include_upcoming: If True, include contests that haven't started yet
-    
-    Returns:
-        Dictionary with latest weekly and biweekly contest info
+    Get the most recent Weekly and Biweekly contests using range-based search.
+    LeetCode's contest list API is unreliable, so we check contest numbers directly.
     """
     logger.info("Detecting recent contests...")
     
     current_time = int(time.time())
     
-    # Start from a recent contest number and work backwards
-    # Weekly contests happen every week, biweekly every 2 weeks
-    # As of Dec 2025, we're around contest 478-480 for weekly, 145-147 for biweekly
-    
     latest_weekly = None
     latest_biweekly = None
     
-    # Try to find latest weekly contest (check last 10)
+    # Search for latest weekly contest (check backwards from a recent number)
     logger.info("Searching for latest weekly contest...")
-    for i in range(485, 465, -1):  # Check 485 down to 465
+    for i in range(485, 465, -1):  # Check 485 down to 466
         slug = f"weekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         
@@ -174,15 +163,20 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
             start_time = contest_info['start_time']
             end_time = contest_info['end_time']
             
-            # Check if this contest matches our criteria
-            if include_upcoming or end_time < current_time:
+            # If we want recent completed contests
+            if not include_upcoming and end_time < current_time:
                 latest_weekly = contest_info
                 logger.info(f"Found latest weekly: {slug}")
                 break
+            # If we want upcoming contests too
+            elif include_upcoming:
+                latest_weekly = contest_info
+                logger.info(f"Found weekly: {slug}")
+                break
     
-    # Try to find latest biweekly contest (check last 10)
+    # Search for latest biweekly contest (check backwards from a recent number)
     logger.info("Searching for latest biweekly contest...")
-    for i in range(150, 135, -1):  # Check 150 down to 135
+    for i in range(150, 135, -1):  # Check 150 down to 136
         slug = f"biweekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         
@@ -190,18 +184,21 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
             start_time = contest_info['start_time']
             end_time = contest_info['end_time']
             
-            # Check if this contest matches our criteria
-            if include_upcoming or end_time < current_time:
+            # If we want recent completed contests
+            if not include_upcoming and end_time < current_time:
                 latest_biweekly = contest_info
                 logger.info(f"Found latest biweekly: {slug}")
+                break
+            # If we want upcoming contests too
+            elif include_upcoming:
+                latest_biweekly = contest_info
+                logger.info(f"Found biweekly: {slug}")
                 break
     
     return {
         "weekly": latest_weekly,
         "biweekly": latest_biweekly
     }
-
-
 def get_upcoming_contests() -> Dict:
     """
     Get upcoming contests that haven't started yet.

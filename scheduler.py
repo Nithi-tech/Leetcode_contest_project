@@ -9,7 +9,7 @@ Runs the fraud detection pipeline automatically:
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -97,19 +97,18 @@ class ContestScheduler:
     def is_weekly_trigger_time(self) -> bool:
         """
         Check if current time is weekly contest trigger time.
-        Weekly: Sunday 9:32 AM (IST assumed based on 8:00 AM start)
-        
-        Returns:
-            True if within 1-minute window of trigger time
+        Weekly: Sunday 9:32 AM IST
         """
-        now = datetime.now()
+        # Get UTC time and convert to IST (UTC + 5:30)
+        now_utc = datetime.utcnow()
+        now_ist = now_utc + timedelta(hours=5, minutes=30)
         
         # Check if it's Sunday (weekday 6)
-        if now.weekday() != 6:
+        if now_ist.weekday() != 6:
             return False
         
-        # Check if it's between 9:32 AM and 9:33 AM
-        if now.hour == 9 and 32 <= now.minute <= 33:
+        # Check if it's between 9:32 AM and 9:33 AM IST
+        if now_ist.hour == 9 and 32 <= now_ist.minute <= 33:
             return True
         
         return False
@@ -117,23 +116,21 @@ class ContestScheduler:
     def is_biweekly_trigger_time(self) -> bool:
         """
         Check if current time is biweekly contest trigger time.
-        Biweekly: Saturday 9:32 PM (every alternate week)
-        
-        Returns:
-            True if within 1-minute window of trigger time
+        Biweekly: Saturday 9:32 PM IST
         """
-        now = datetime.now()
+        # Get UTC time and convert to IST (UTC + 5:30)
+        now_utc = datetime.utcnow()
+        now_ist = now_utc + timedelta(hours=5, minutes=30)
         
         # Check if it's Saturday (weekday 5)
-        if now.weekday() != 5:
+        if now_ist.weekday() != 5:
             return False
         
-        # Check if it's between 9:32 PM and 9:33 PM
-        if now.hour == 21 and 32 <= now.minute <= 33:
+        # Check if it's between 9:32 PM and 9:33 PM IST
+        if now_ist.hour == 21 and 32 <= now_ist.minute <= 33:
             return True
         
         return False
-    
     def process_contest(self, contest: Dict) -> bool:
         """
         Process a single contest.
