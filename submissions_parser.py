@@ -20,10 +20,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-SUBMISSIONS_API_BASE = "https://leetcodeapi-q9gsf4kwz-nithivalavan6-gmailcoms-projects.vercel.app"
+# Multiple API endpoints to distribute load and avoid rate limiting
+SUBMISSIONS_API_ENDPOINTS = [
+    "https://leetcode-khaki.vercel.app",
+    "https://leetcode-indol.vercel.app",
+    "https://leetcode-ochre.vercel.app",
+    "https://leetcode-theta-lovat.vercel.app",
+    "https://nithi-murex.vercel.app"
+]
 LEETCODE_CONTEST_API = "https://leetcode.com/contest/api/info"
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
+
+# Global counter to rotate through API endpoints
+_api_endpoint_index = 0
 
 
 def fetch_contest_metadata(contest_slug: str) -> Dict:
@@ -83,6 +93,7 @@ def fetch_contest_metadata(contest_slug: str) -> Dict:
 def fetch_user_submissions(leetcode_id: str) -> List[dict]:
     """
     Fetch all submissions for a user from the deployed API.
+    Uses multiple API endpoints in round-robin fashion to avoid rate limiting.
     
     Args:
         leetcode_id: LeetCode username
@@ -94,14 +105,20 @@ def fetch_user_submissions(leetcode_id: str) -> List[dict]:
         - statusDisplay: Result status (e.g., "Accepted")
         - lang: Programming language
     """
-    url = f"{SUBMISSIONS_API_BASE}/{leetcode_id}/submission"
+    global _api_endpoint_index
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
-    # Retry loop with exponential backoff
+    # Retry loop with round-robin API endpoints and exponential backoff
     for attempt in range(1, MAX_RETRIES + 1):
+        # Select API endpoint in round-robin fashion
+        api_base = SUBMISSIONS_API_ENDPOINTS[_api_endpoint_index % len(SUBMISSIONS_API_ENDPOINTS)]
+        _api_endpoint_index += 1
+        
+        url = f"{api_base}/{leetcode_id}/submission"
+        
         try:
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
@@ -111,11 +128,11 @@ def fetch_user_submissions(leetcode_id: str) -> List[dict]:
             # API returns {"submission": [...]}
             submissions = data.get('submission', [])
             
-            logger.debug(f"Fetched {len(submissions)} submissions for {leetcode_id}")
+            logger.debug(f"Fetched {len(submissions)} submissions for {leetcode_id} from {api_base}")
             return submissions
             
         except requests.exceptions.Timeout:
-            logger.warning(f"Timeout fetching submissions for {leetcode_id} (attempt {attempt}/{MAX_RETRIES})")
+            logger.warning(f"Timeout fetching submissions for {leetcode_id} from {api_base} (attempt {attempt}/{MAX_RETRIES})")
             
             if attempt < MAX_RETRIES:
                 delay = RETRY_DELAY * (2 ** (attempt - 1))
@@ -125,7 +142,7 @@ def fetch_user_submissions(leetcode_id: str) -> List[dict]:
                 return []
         
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Request error for {leetcode_id}: {e} (attempt {attempt}/{MAX_RETRIES})")
+            logger.warning(f"Request error for {leetcode_id} from {api_base}: {e} (attempt {attempt}/{MAX_RETRIES})")
             
             if attempt < MAX_RETRIES:
                 delay = RETRY_DELAY * (2 ** (attempt - 1))
