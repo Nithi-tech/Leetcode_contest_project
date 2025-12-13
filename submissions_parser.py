@@ -22,15 +22,13 @@ logger = logging.getLogger(__name__)
 
 # Multiple API endpoints to distribute load and avoid rate limiting
 SUBMISSIONS_API_ENDPOINTS = [
-    "https://leetcode-khaki.vercel.app",
-    "https://leetcode-indol.vercel.app",
-    "https://leetcode-ochre.vercel.app",
-    "https://leetcode-theta-lovat.vercel.app",
-    "https://nithi-murex.vercel.app"
+    "https://alfa-pi.vercel.app",
+    "https://alfa-weld.vercel.app",
+    "https://alfa-nu.vercel.app"
 ]
 LEETCODE_CONTEST_API = "https://leetcode.com/contest/api/info"
 MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
+RETRY_DELAY = 3  # seconds (increased to avoid rate limits)
 
 # Global counter to rotate through API endpoints
 _api_endpoint_index = 0
@@ -90,7 +88,7 @@ def fetch_contest_metadata(contest_slug: str) -> Dict:
     raise RuntimeError("Failed after all retries")
 
 
-def fetch_user_submissions(leetcode_id: str) -> List[dict]:
+def fetch_user_submissions(leetcode_id: str):
     """
     Fetch all submissions for a user from the deployed API.
     Uses multiple API endpoints in round-robin fashion to avoid rate limiting.
@@ -104,6 +102,8 @@ def fetch_user_submissions(leetcode_id: str) -> List[dict]:
         - timestamp: Submission time (UNIX seconds as string)
         - statusDisplay: Result status (e.g., "Accepted")
         - lang: Programming language
+        
+        Returns None if user ID is invalid (404 error)
     """
     global _api_endpoint_index
     
@@ -125,8 +125,20 @@ def fetch_user_submissions(leetcode_id: str) -> List[dict]:
             
             data = response.json()
             
-            # API returns {"submission": [...]}
+            # Check for invalid user - API returns {"count":0,"submission":[]} for invalid IDs
+            # Valid users have count > 0 or at least some submission data
+            count = data.get('count', 0)
             submissions = data.get('submission', [])
+            
+            # If count is 0 AND submissions is empty, it's likely an invalid user
+            # But we need to differentiate from users with no submissions
+            # Invalid users return exactly {"count":0,"submission":[]}
+            if count == 0 and len(submissions) == 0:
+                # Check if this is truly invalid by verifying the response structure
+                # Invalid users return minimal response, valid users may have other fields
+                if len(data) == 2 and 'count' in data and 'submission' in data:
+                    logger.warning(f"Invalid LeetCode ID: {leetcode_id} (no user data)")
+                    return None  # Signal invalid ID
             
             logger.debug(f"Fetched {len(submissions)} submissions for {leetcode_id} from {api_base}")
             return submissions
@@ -201,6 +213,11 @@ def evaluate_student_submissions(
     
     # Fetch all submissions for the user
     submissions = fetch_user_submissions(leetcode_id)
+    
+    # Check for invalid ID
+    if submissions is None:
+        logger.warning(f"Invalid LeetCode ID: {leetcode_id}")
+        return "INVALID ID"
     
     if not submissions:
         logger.debug(f"No submissions found for {leetcode_id}")

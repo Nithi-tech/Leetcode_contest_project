@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from typing import Dict, List
 
 from contest_fetcher import fetch_contest_problems
@@ -119,7 +120,7 @@ def run_pipeline(config: Dict, dry_run: bool = False) -> None:
     # Step 3: Process each student
     logger.info("Step 3: Evaluating student submissions...")
     results = []
-    stats = {'N/A': 0, '0': 0, 'solved': {}}
+    stats = {'N/A': 0, '0': 0, 'INVALID ID': 0, 'solved': {}}
     
     for idx, student in enumerate(students, 1):
         name = student['name']
@@ -144,11 +145,17 @@ def run_pipeline(config: Dict, dry_run: bool = False) -> None:
             stats['N/A'] += 1
         elif result == '0':
             stats['0'] += 1
+        elif result == 'INVALID ID':
+            stats['INVALID ID'] += 1
         else:
             solved_count = int(result)
             stats['solved'][solved_count] = stats['solved'].get(solved_count, 0) + 1
         
         logger.info(f"  Result: {result}")
+        
+        # Add small delay between students to prevent rate limiting
+        if idx < len(students):
+            time.sleep(0.5)
     
     logger.info("-" * 70)
     
@@ -156,12 +163,13 @@ def run_pipeline(config: Dict, dry_run: bool = False) -> None:
     if dry_run:
         logger.info("Step 4: DRY RUN - Results that would be written:")
         for idx, (student, result) in enumerate(zip(students, results), 1):
-            logger.info(f"  Row {idx + 1}: {student['name']} -> {result}")
+            logger.info(f"  Row {student['row']}: {student['name']} -> {result}")
     else:
         logger.info("Step 4: Writing results to Google Sheets...")
         sheets_handler.write_contest_results(
             contest_display_name=contest_display_name,
-            results=results
+            results=results,
+            students=students  # Pass students for row-aligned writing
         )
         logger.info("Results written successfully")
     
@@ -172,6 +180,7 @@ def run_pipeline(config: Dict, dry_run: bool = False) -> None:
     logger.info(f"  Total students processed: {len(students)}")
     logger.info(f"  N/A (no submissions): {stats['N/A']}")
     logger.info(f"  0 (attempted, none accepted): {stats['0']}")
+    logger.info(f"  INVALID ID: {stats['INVALID ID']}")
     
     if stats['solved']:
         logger.info("  Solved distribution:")

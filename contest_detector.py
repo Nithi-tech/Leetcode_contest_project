@@ -28,6 +28,31 @@ LEETCODE_CONTEST_INFO_API = "https://leetcode.com/contest/api/info"
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
+# Contest number estimation constants
+# Weekly Contest #1 started around Jan 2016
+# Biweekly Contest #1 started around May 2019
+WEEKLY_CONTEST_START_DATE = datetime(2016, 1, 1)
+BIWEEKLY_CONTEST_START_DATE = datetime(2019, 5, 1)
+
+
+def estimate_current_contest_numbers():
+    """
+    Estimate current contest numbers based on date.
+    Returns tuple: (weekly_estimate, biweekly_estimate)
+    """
+    now = datetime.now()
+    
+    # Weekly contests: ~52 per year, happens every Sunday
+    weeks_since_weekly_start = (now - WEEKLY_CONTEST_START_DATE).days / 7
+    weekly_estimate = int(weeks_since_weekly_start)
+    
+    # Biweekly contests: ~26 per year, happens every 2 weeks
+    weeks_since_biweekly_start = (now - BIWEEKLY_CONTEST_START_DATE).days / 7
+    biweekly_estimate = int(weeks_since_biweekly_start / 2)
+    
+    logger.debug(f"Estimated contest numbers: Weekly ~{weekly_estimate}, Biweekly ~{biweekly_estimate}")
+    return weekly_estimate, biweekly_estimate
+
 
 def fetch_contest_list() -> list:
     """
@@ -145,6 +170,7 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
     """
     Get the most recent Weekly and Biweekly contests using range-based search.
     LeetCode's contest list API is unreliable, so we check contest numbers directly.
+    Uses dynamic range calculation to avoid hard-coded limits.
     """
     logger.info("Detecting recent contests...")
     
@@ -153,9 +179,16 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
     latest_weekly = None
     latest_biweekly = None
     
-    # Search for latest weekly contest (check backwards from a recent number)
-    logger.info("Searching for latest weekly contest...")
-    for i in range(485, 465, -1):  # Check 485 down to 466
+    # Get estimated current contest numbers
+    weekly_estimate, biweekly_estimate = estimate_current_contest_numbers()
+    
+    # Search for latest weekly contest (check backwards from estimate)
+    # Search range: estimate to (estimate - 20) to handle gaps/skipped contests
+    weekly_start = max(weekly_estimate, 470)  # Minimum 470 as safety floor
+    weekly_end = weekly_start - 25
+    
+    logger.info(f"Searching for latest weekly contest in range {weekly_start} to {weekly_end}...")
+    for i in range(weekly_start, weekly_end, -1):
         slug = f"weekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         
@@ -174,9 +207,12 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
                 logger.info(f"Found weekly: {slug}")
                 break
     
-    # Search for latest biweekly contest (check backwards from a recent number)
-    logger.info("Searching for latest biweekly contest...")
-    for i in range(150, 135, -1):  # Check 150 down to 136
+    # Search for latest biweekly contest (check backwards from estimate)
+    biweekly_start = max(biweekly_estimate, 140)  # Minimum 140 as safety floor
+    biweekly_end = biweekly_start - 15
+    
+    logger.info(f"Searching for latest biweekly contest in range {biweekly_start} to {biweekly_end}...")
+    for i in range(biweekly_start, biweekly_end, -1):
         slug = f"biweekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         
@@ -202,6 +238,7 @@ def get_recent_contests(include_upcoming: bool = False) -> Dict:
 def get_upcoming_contests() -> Dict:
     """
     Get upcoming contests that haven't started yet.
+    Uses dynamic range calculation based on current date.
     
     Returns:
         Dictionary with next weekly and biweekly contests
@@ -213,9 +250,15 @@ def get_upcoming_contests() -> Dict:
     next_weekly = None
     next_biweekly = None
     
-    # Try to find next weekly contest (check next 5)
-    logger.info("Searching for next weekly contest...")
-    for i in range(485, 495):  # Check 485 to 494
+    # Get estimated current contest numbers
+    weekly_estimate, biweekly_estimate = estimate_current_contest_numbers()
+    
+    # Try to find next weekly contest (check forward from estimate)
+    weekly_start = max(weekly_estimate - 2, 470)  # Start slightly before estimate
+    weekly_end = weekly_start + 10
+    
+    logger.info(f"Searching for next weekly contest in range {weekly_start} to {weekly_end}...")
+    for i in range(weekly_start, weekly_end):
         slug = f"weekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         
@@ -227,9 +270,12 @@ def get_upcoming_contests() -> Dict:
                 logger.info(f"Found next weekly: {slug} at {datetime.fromtimestamp(start_time)}")
                 break
     
-    # Try to find next biweekly contest (check next 5)
-    logger.info("Searching for next biweekly contest...")
-    for i in range(145, 155):  # Check 145 to 154
+    # Try to find next biweekly contest (check forward from estimate)
+    biweekly_start = max(biweekly_estimate - 1, 140)  # Start slightly before estimate
+    biweekly_end = biweekly_start + 8
+    
+    logger.info(f"Searching for next biweekly contest in range {biweekly_start} to {biweekly_end}...")
+    for i in range(biweekly_start, biweekly_end):
         slug = f"biweekly-contest-{i}"
         contest_info = fetch_detailed_contest_info(slug)
         

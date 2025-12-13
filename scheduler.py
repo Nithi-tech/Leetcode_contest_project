@@ -2,8 +2,11 @@
 Contest Scheduler - Automated trigger at specific times
 
 Runs the fraud detection pipeline automatically:
-- Weekly Contest: Every Sunday 9:32 AM (2 min after 9:30 AM end)
-- Biweekly Contest: Every alternate Saturday 9:32 PM (2 min after 9:30 PM end)
+- Daily Stats Update: Every day at 12:00 PM IST (6:30 AM UTC / 1:30 AM US East)
+- Weekly Contest: Every Sunday 9:34 AM IST (4:04 AM UTC / 11:04 PM Saturday US East)
+- Biweekly Contest: Every alternate Saturday 9:34 PM IST (4:04 PM UTC / 11:04 AM US East)
+
+Note: Railway deployment uses US East (Virginia) timezone = UTC-5
 """
 
 import json
@@ -12,6 +15,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
+import subprocess
+import sys
 
 from contest_detector import get_recent_contests
 from contest_fetcher import fetch_contest_problems
@@ -58,6 +63,19 @@ class ContestStatusTracker:
         """Check if contest has already been processed."""
         return contest_slug in self.status['processed_contests']
     
+    def is_stats_updated_today(self) -> bool:
+        """Check if daily stats have been updated today."""
+        last_update = self.status.get('last_stats_update', '')
+        today = datetime.now().strftime('%Y-%m-%d')
+        return last_update == today
+    
+    def mark_stats_updated(self):
+        """Mark daily stats as updated for today."""
+        today = datetime.now().strftime('%Y-%m-%d')
+        self.status['last_stats_update'] = today
+        self._save_status()
+        logger.info(f"Marked stats updated for {today}")
+    
     def mark_processed(self, contest_slug: str, timestamp: int = None):
         """Mark contest as processed."""
         if timestamp is None:
@@ -94,20 +112,27 @@ class ContestScheduler:
             logger.error(f"Failed to load config: {e}")
             return {}
     
+    def get_current_time_ist(self) -> datetime:
+        """Get current time in IST, accounting for Railway's timezone."""
+        # Railway servers run on US East (UTC-5 or UTC-4 during DST)
+        # To get IST time: convert local time to UTC, then add IST offset
+        now_local = datetime.now()
+        now_utc = datetime.now(timezone.utc)
+        now_ist = now_utc + timedelta(hours=5, minutes=30)
+        return now_ist.replace(tzinfo=None)  # Remove timezone for comparison
+    
     def is_weekly_trigger_time(self) -> bool:
         """
         Check if current time is weekly contest trigger time.
-        Weekly: Sunday 9:32 AM IST
+        Weekly: Sunday 9:34 AM IST (4 minutes after 9:30 AM contest end)
         """
-        # Get UTC time and convert to IST (UTC + 5:30)
-        now_utc = datetime.utcnow()
-        now_ist = now_utc + timedelta(hours=5, minutes=30)
+        now_ist = self.get_current_time_ist()
         
         # Check if it's Sunday (weekday 6)
         if now_ist.weekday() != 6:
             return False
         
-        # Check if it's between 9:32 AM and 9:33 AM IST
+        # Check if it's between 9:34 AM and 9:35 AM IST
         if now_ist.hour == 9 and 34 <= now_ist.minute <= 35:
             return True
         
@@ -116,19 +141,46 @@ class ContestScheduler:
     def is_biweekly_trigger_time(self) -> bool:
         """
         Check if current time is biweekly contest trigger time.
-        Biweekly: Saturday 9:32 PM IST
+        Biweekly: Saturday 9:34 PM IST (4 minutes after 9:30 PM contest end)
+        Only triggers on alternate Saturdays when biweekly contest actually happens.
         """
-        # Get UTC time and convert to IST (UTC + 5:30)
-        now_utc = datetime.utcnow()
-        now_ist = now_utc + timedelta(hours=5, minutes=30)
+        now_ist = self.get_current_time_ist()
         
         # Check if it's Saturday (weekday 5)
         if now_ist.weekday() != 5:
             return False
         
-        # Check if it's between 9:32 PM and 9:33 PM IST
+        # Check if it's between 9:34 PM and 9:35 PM IST
         if now_ist.hour == 21 and 34 <= now_ist.minute <= 35:
-            return True
+            # Check if there's actually a biweekly contest today by checking recent contests
+            try:
+                recent = get_recent_contests()
+                biweekly = recent.get('biweekly')
+                if biweekly:
+                    # Check if the biweekly contest ended recently (within last 2 hours)
+                    contest_end = biweekly.get('end_time', 0)
+                    time_since_end = time.time() - contest_end
+                    # Should be between 4 minutes and 2 hours after contest end
+                    if 240 <= time_since_end <= 7200:  # 4 min to 2 hours
+                        return True
+            except Exception as e:
+                logger.error(f"Error checking biweekly contest: {e}")
+            return False
+        
+        return False
+    
+    def is_daily_stats_trigger_time(self) -> bool:
+        """
+        Check if current time is daily stats update trigger time.
+        Daily: 12:00 PM IST (noon) - updates total problems solved and contest rating
+        """
+        now_ist = self.get_current_time_ist()
+        
+        # Check if it's between 12:00 PM and 12:01 PM IST
+        if now_ist.hour == 12 and 0 <= now_ist.minute <= 1:
+            # Check if not already updated today
+            if not self.status_tracker.is_stats_updated_today():
+                return True
         
         return False
     def process_contest(self, contest: Dict) -> bool:
@@ -191,7 +243,7 @@ class ContestScheduler:
             logger.info("Step 3: Evaluating student submissions...")
             results = []
             results_dict = {}
-            stats = {'N/A': 0, '0': 0, 'solved': {}}
+            stats = {'N/A': 0, '0': 0, 'INVALID ID': 0, 'solved': {}}
             
             for idx, student in enumerate(students, 1):
                 name = student['name']
@@ -215,15 +267,21 @@ class ContestScheduler:
                     stats['N/A'] += 1
                 elif result == '0':
                     stats['0'] += 1
+                elif result == 'INVALID ID':
+                    stats['INVALID ID'] += 1
                 else:
                     solved_count = int(result)
                     stats['solved'][solved_count] = stats['solved'].get(solved_count, 0) + 1
                 
                 logger.info(f"  Result: {result}")
+                
+                # Add small delay between students to prevent rate limiting
+                if idx < len(students):
+                    time.sleep(0.5)
             
             # Step 4: Write results to Google Sheets
             logger.info("Step 4: Writing results to Google Sheets...")
-            sheets.write_contest_results(title, results)
+            sheets.write_contest_results(title, results, students)  # Pass students for row-aligned writing
             logger.info("Results written successfully to Google Sheets")
             
             # Print summary
@@ -232,6 +290,7 @@ class ContestScheduler:
             logger.info(f"  Total students: {len(students)}")
             logger.info(f"  N/A (no submissions): {stats['N/A']}")
             logger.info(f"  0 (attempted, none accepted): {stats['0']}")
+            logger.info(f"  INVALID ID: {stats['INVALID ID']}")
             if stats['solved']:
                 logger.info("  Solved distribution:")
                 for count in sorted(stats['solved'].keys()):
@@ -316,6 +375,36 @@ class ContestScheduler:
         except Exception as e:
             logger.error(f"Error processing biweekly contest: {e}", exc_info=True)
     
+    def try_update_daily_stats(self):
+        """Try to update daily stats if it's trigger time."""
+        if not self.is_daily_stats_trigger_time():
+            return
+        
+        logger.info("📊 Daily stats update trigger time detected!")
+        
+        try:
+            # Run update_stats.py
+            logger.info("Running update_stats.py to update LeetCode statistics...")
+            result = subprocess.run(
+                [sys.executable, 'update_stats.py'],
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+            
+            if result.returncode == 0:
+                logger.info("✅ Daily stats updated successfully!")
+                logger.info(f"Output: {result.stdout}")
+                self.status_tracker.mark_stats_updated()
+            else:
+                logger.error(f"❌ Stats update failed with code {result.returncode}")
+                logger.error(f"Error: {result.stderr}")
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Stats update timed out after 10 minutes")
+        except Exception as e:
+            logger.error(f"Error updating daily stats: {e}", exc_info=True)
+    
     def run(self):
         """
         Run the scheduler continuously.
@@ -324,11 +413,13 @@ class ContestScheduler:
         logger.info("=" * 70)
         logger.info("LEETCODE CONTEST SCHEDULER STARTED")
         logger.info("=" * 70)
-        logger.info("Schedule:")
-        logger.info("  Weekly Contest:   Every Sunday at 9:32 AM")
-        logger.info("  Biweekly Contest: Every alternate Saturday at 9:32 PM")
+        logger.info("Schedule (IST):")
+        logger.info("  Daily Stats Update: Every day at 12:00 PM (noon)")
+        logger.info("  Weekly Contest:     Every Sunday at 9:34 AM")
+        logger.info("  Biweekly Contest:   Every alternate Saturday at 9:34 PM")
         logger.info("=" * 70)
-        logger.info(f"Current time: {datetime.now()}")
+        logger.info(f"Server Local Time: {datetime.now()}")
+        logger.info(f"IST Time: {self.get_current_time_ist()}")
         logger.info("Monitoring for trigger times...")
         logger.info("=" * 70)
         
@@ -338,6 +429,7 @@ class ContestScheduler:
                 
                 # Check every minute
                 if now.second < 10:  # Only check in first 10 seconds of each minute
+                    self.try_update_daily_stats()
                     self.try_process_weekly()
                     self.try_process_biweekly()
                 

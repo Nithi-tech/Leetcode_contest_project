@@ -16,12 +16,13 @@ A **24/7 automated system** that:
 
 ---
 
-## ⏰ Automatic Schedule
+## ⏰ Automatic Schedule (IST)
 
-| Contest Type | Day | Contest Time | Auto-Run Time |
-|-------------|-----|--------------|---------------|
-| **Weekly** | Every Sunday | 8:00-9:30 AM | **9:32 AM** ✅ |
-| **Biweekly** | Alternate Saturdays | 8:00-9:30 PM | **9:32 PM** ✅ |
+| Task Type | Schedule | Trigger Time | Purpose |
+|-----------|----------|--------------|---------|
+| **Daily Stats** | Every day | **12:00 PM (noon)** | Update total problems solved & contest rating |
+| **Weekly Contest** | Every Sunday | **9:34 AM** | Process contest results (4 min after 9:30 AM end) |
+| **Biweekly Contest** | Alternate Saturdays | **9:34 PM** | Process contest results (4 min after 9:30 PM end) |
 
 ---
 

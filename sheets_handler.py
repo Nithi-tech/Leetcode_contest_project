@@ -80,8 +80,9 @@ class SheetsHandler:
         Read student data from the sheet.
         
         Expected format:
-        - Column A (index 0): NAME
-        - Column B (index 1): Leetcode ID
+        - Column A (index 0): Reg.No
+        - Column B (index 1): Name
+        - Column C (index 2): Leet Code ID
         - Row 1 is header (skipped)
         
         Returns:
@@ -101,13 +102,13 @@ class SheetsHandler:
         
         students = []
         for idx, row in enumerate(data_rows, start=2):  # Start at row 2 (after header)
-            # Ensure row has at least 2 columns
-            if len(row) < 2:
+            # Ensure row has at least 3 columns
+            if len(row) < 3:
                 logger.warning(f"Row {idx} has insufficient columns, skipping")
                 continue
             
-            name = row[0].strip()
-            leetcode_id = row[1].strip()
+            name = row[1].strip()  # Column B: Name
+            leetcode_id = row[2].strip()  # Column C: Leet Code ID
             
             # Skip empty rows
             if not name and not leetcode_id:
@@ -158,37 +159,47 @@ class SheetsHandler:
         
         return new_col_index
     
-    def write_contest_results(self, contest_display_name: str, results: List[str]) -> None:
+    def write_contest_results(self, contest_display_name: str, results: List[str], students: List[Dict] = None) -> None:
         """
         Write contest results to the sheet (idempotent).
         
         Args:
             contest_display_name: Display name for the contest column
-            results: List of results (one per student row, in order)
+            results: List of results (one per student, in order)
+            students: Optional list of student dicts with 'row' field for exact row placement
         """
         logger.info(f"Writing results for contest: {contest_display_name}")
         
         # Find or create the contest column
         col_index = self.find_or_create_contest_column(contest_display_name)
         
-        # Prepare batch update
-        # Start at row 2 (first data row after header)
-        start_row = 2
-        end_row = start_row + len(results) - 1
-        
         # Convert column index to letter (A, B, C, ... AA, AB, ...)
         col_letter = self._col_index_to_letter(col_index)
         
-        # Format range (e.g., "C2:C101")
-        range_name = f"{col_letter}{start_row}:{col_letter}{end_row}"
-        
-        # Prepare values as 2D array (each result in its own row)
-        values = [[result] for result in results]
-        
-        logger.info(f"Writing {len(results)} results to range {range_name}")
-        
-        # Batch update
-        self.worksheet.update(range_name, values)
+        if students and len(students) == len(results):
+            # Write to exact rows using student row numbers
+            # Build batch update with specific cells
+            cells_to_update = []
+            for student, result in zip(students, results):
+                row_num = student['row']
+                cells_to_update.append({
+                    'range': f"{col_letter}{row_num}",
+                    'values': [[result]]
+                })
+            
+            logger.info(f"Writing {len(results)} results to column {col_letter} (row-aligned)")
+            
+            # Batch update all cells
+            self.worksheet.batch_update(cells_to_update)
+        else:
+            # Fallback: Write sequentially starting from row 2
+            start_row = 2
+            end_row = start_row + len(results) - 1
+            range_name = f"{col_letter}{start_row}:{col_letter}{end_row}"
+            values = [[result] for result in results]
+            
+            logger.info(f"Writing {len(results)} results to range {range_name}")
+            self.worksheet.update(range_name, values)
         
         logger.info("Results written successfully")
     

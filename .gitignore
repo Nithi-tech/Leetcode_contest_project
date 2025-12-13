@@ -56,3 +56,13 @@ test_*.json
 # Backup files
 *.bak
 *.backup
+results_backup/
+
+# Generated PDFs (optional - remove this line if you want to commit PDFs)
+*.pdf
+
+# Temporary/debug scripts
+check_*.py
+debug_*.py
+test_*.py
+retry_*.py
